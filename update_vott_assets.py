@@ -1,18 +1,16 @@
-import subprocess
 import fileinput
 import hashlib
-import click
 import json
 import glob
 import sys
 import os
 import re
+import argparse
 """
 # TODO: the provider, found in the vott file encryts the connection information for local filestystem.
         "providerOptions": {
             "encrypted": "eyJjaXBoZXJ0ZXh0IjoiM2RkMDM5Y2Y4ZGJjYjk1MzQ3ZTczMGRlYTZmNzg2MjdhZjRhN2E0MWNiNGRjNWViNDgyZWI5NzRmNDE0YWNjNDM5MmU1MGU0NzNhMzQ1MjUyYWM4YTIxM2YzODljOTEzYjhhYTkyNDhlMjIzMGNiZjQyZGM2ZjA4ZmM5OWY5MTMwODg1MjE3ZjQ1MmI3YmMyMmZhOTQ3ZTczODlmOTljN2E5MDkxOTA4MGM0MzcyMjhjYzViZGMzYWYwMTA4YjQ2ODJhZTg0ZmFmZjUyNTU0NzVlZDRkYjY3MGQ0ZGVkYjQ4YzdkOTJiN2ViNmJiZTI0OTIwMjg3ZTNiZmIzMzM2YzBmNjhlYzgzMjhhZWI5ZTBkZDExZTJhN2Y5MjRjYjEyNjczYmM1Nzk5NGQzNzIwZTdiMGZlY2M3MGJjOTlkMTgiLCJpdiI6IjM0OTU5NDBmOTJmMjE4MDJjMGM2Y2M0ZDM3MzlmYTYwNTllMTU2NGU2N2E3ZWI2NCJ9"
         },
-
 Unencrypt this, transform it (replace with the new path), then reencrypt. This way your source and destination directories will be automatically fixed.
 """
 
@@ -62,8 +60,8 @@ def map_old_vott_path_and_id_to_new(vott_dict, directory_name):
     # iterate through all the assets
     for asset in vott_dict['assets'].values():
         # get what will be the new path of the source asset
-        source_asset_path = 'file:'+os.path.join(directory_name, asset['name'])
-
+        source_asset_path = 'file:'+ directory_name + '/' + asset['name']
+        
         # map the old id to the hexdigest of the full path to the source asset
         old_to_new_ids[asset['id']] = hashlib.md5(source_asset_path.encode('utf-8')).hexdigest()
         
@@ -107,23 +105,22 @@ def replace_old_contents(target_directory, old_to_new_ids, old_source_directory,
                 
             # replace the old directory name with the new one in this line
             line = line.replace(old_source_directory, node_ready_new_source_directory)
+            line = line.replace("\\n","")
             
             # the fileinput stream is open (thanks to inplace=True) so everything that goes to stdout
             # goes into the original file (idgi, just works)
-            sys.stdout.write(line)
+            try:
+                sys.stdout.write(line)
+            except:
+                sys.stdout.write(line.encode('utf-8'))
             
         except UnicodeDecodeError as e:
             pass
 
-@click.argument('new_source_directory', type=click.Path(exists=True, file_okay=False,\
-            resolve_path=True, readable=True), required=True)
-@click.argument('target_directory', type=click.Path(exists=True, file_okay=False,\
-            resolve_path=True, readable=True), required=True)
-@click.command()
-def main(new_source_directory, target_directory):
+def update_md5_hash_id(new_source_directory, target_directory):
     """
     This script solves the problem of transferring assets labeled with VoTT from one machine to
-    another. 
+    another. Important: File paths with slash, not backslash!
     
     Arguments:
     
@@ -137,8 +134,6 @@ def main(new_source_directory, target_directory):
     in the labeling process.
     
     \b
-    
-    
     
     Purpose:
     
@@ -164,7 +159,7 @@ def main(new_source_directory, target_directory):
     
     # get the value of the 'path' key out of the the vott dictionary (a string referencing the old file)
     path_value = list(vott_dict['assets'].values())[0]['path']
-    
+
     # get the source directory of the old files (to substitute with the new one)
     # e.g. keep the '/home/dir' part of 'file:/home/dir/file.txt'
     old_source_directory = os.path.split(path_value[len('file:'):])[0]
@@ -200,7 +195,6 @@ def main(new_source_directory, target_directory):
     
     final_instructions = '''
 Done! Only a couple remaining steps:
-
     1. Open VoTT
     2. Click Home then click Open Local Project
     3. Navigate to '{target_directory}'
@@ -230,4 +224,10 @@ Done! Only a couple remaining steps:
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--newsource",
+                    help="the path to the directory that contains the images that were originally tagged")
+    parser.add_argument("-t", "--target",
+                    help="the path to the directory that contains all the -asset.json files and the .vott file")
+    args = parser.parse_args()
+    update_md5_hash_id(args.newsource.replace("\\", "/"), args.target.replace("\\", "/"))
